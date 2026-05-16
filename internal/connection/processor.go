@@ -6,6 +6,7 @@ import (
 	"NovaGate/internal/protocol/http"
 	"NovaGate/internal/router"
 	"net/url"
+	"strings"
 
 	"github.com/cloudwego/netpoll"
 	"go.uber.org/zap"
@@ -33,12 +34,22 @@ func Process(conn netpoll.Connection, r *router.Router) {
 	}
 
 	var reqBuf []byte
+	headers := make(map[string]string)
 	// 消耗掉剩下的 Header (防止沾包)
 	for {
-		headerLine, _ := reader.Until('\n')
-		reqBuf = append(reqBuf, headerLine...)
-		if len(headerLine) <= 2 { // 遇到空行 \r\n，说明 Header 结束
+		headerLineBytes, _ := reader.Until('\n')
+		reqBuf = append(reqBuf, headerLineBytes...)
+		if len(headerLineBytes) <= 2 { // 遇到空行 \r\n，说明 Header 结束
 			break
+		}
+		line := string(headerLineBytes)
+		// 按照冒号切分 Header (例如 "Content-Type: application/json\r\n")
+		parts := strings.SplitN(line, ":", 2)
+		if len(parts) == 2 {
+			key := strings.TrimSpace(parts[0])
+			value := strings.TrimSpace(parts[1])
+			// 统一去掉尾部的 \r\n
+			headers[key] = strings.TrimRight(value, "\r\n")
 		}
 	}
 	// 释放读缓冲区（Netpoll nocopy 机制要求）
@@ -94,6 +105,7 @@ func Process(conn netpoll.Connection, r *router.Router) {
 		c.Path = pathStr
 		c.RawQuery = u.RawQuery
 		c.Params = params
+		c.Headers = headers
 		c.Handlers = handlers
 		c.Index = -1
 

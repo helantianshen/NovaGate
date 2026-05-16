@@ -20,6 +20,7 @@ type Context struct {
 	Path     string
 	Params   map[string]string // 动态路由参数，如 :id
 	RawQuery string            // 保存原始的 Query String，比如 "token=abc&name=1"
+	Headers  map[string]string // 请求头
 	Handlers []HandlerFunc     // 当前请求需要经过的拦截器链 + 最终的业务 Handler
 	Index    int8              // 当前执行到了第几个拦截器
 }
@@ -43,6 +44,7 @@ func (c *Context) Release() {
 	c.Path = ""
 	c.RawQuery = ""
 	c.Params = nil
+	c.Headers = nil
 	c.Handlers = nil
 	c.Index = -1
 	contextPool.Put(c)

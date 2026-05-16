@@ -43,7 +43,7 @@ func buildRouter(cfg *config.GatewayConfig) (*router.Router, func()) {
 	// 根据 Nacos 配置，动态注册业务路由和负载均衡池
 	for _, routeRule := range cfg.Routes {
 		// 为每条路由独立生成一个负载均衡池
-		pool := loadbalance.NewLoadBalancer(routeRule.Backends)
+		pool := loadbalance.NewLoadBalancer(routeRule.ServiceName, routeRule.Backends)
 		stripPrefix := routeRule.StripPrefix
 
 		// 把当前池子的销毁动作，注册到闭包数组里
@@ -101,7 +101,7 @@ func main() {
 	logger.Log.Debug("网关日志系统初始化成功", zap.String("version", "v1.0"))
 
 	// 初始化 Nacos
-	err := config.InitNacos("127.0.0.1", 8848)
+	err := config.InitNacos("172.17.0.1", 8848)
 	if err != nil {
 		logger.Log.Fatal("Nacos 启动失败", zap.Error(err)) // 遇错直接 Fatal 退出
 	}

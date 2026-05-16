@@ -45,7 +45,32 @@ func ForwardTo(c *pipline.Context, pool *HostPool) {
 	// 这里基于 Context 里的信息重新拼装
 	upWriter := upstreamConn.Writer()
 	upWriter.WriteString(c.Method + " " + targetURI + " HTTP/1.1\r\n")
-	upWriter.WriteString("Host: " + pool.Addr + "\r\n")
+
+	// 透传原始请求头
+	hasHost := false
+	for k, v := range c.Headers {
+		// 过滤掉客户端自带的 Connection，强制使用我们的 Keep-Alive
+		if strings.ToLower(k) == "connection" {
+			continue
+		}
+		if strings.ToLower(k) == "host" {
+			hasHost = true
+			upWriter.WriteString("Host: " + pool.Addr + "\r\n") // 重写 Host
+			continue
+		}
+		upWriter.WriteString(k + ": " + v + "\r\n")
+	}
+
+	// 如果客户端没发 Host，我们补上
+	if !hasHost {
+		upWriter.WriteString("Host: " + pool.Addr + "\r\n")
+	}
+
+	// 注入网关专属 Header：告诉后端客户端的真实 IP
+	clientIP := c.Conn.RemoteAddr().String()
+	upWriter.WriteString("X-Forwarded-For: " + clientIP + "\r\n")
+	upWriter.WriteString("X-Real-IP: " + clientIP + "\r\n")
+
 	// 通知微服务，不要断开 TCP
 	upWriter.WriteString("Connection: keep-alive\r\n\r\n")
 	upWriter.Flush()
@@ -62,8 +87,12 @@ func ForwardTo(c *pipline.Context, pool *HostPool) {
 
 		lineBytes, err := upReader.Until('\n')
 		if err != nil {
+			// 打印真实错误，并立刻给客户端返回 502，防止卡死
+			logger.Log.Error("读取上游响应失败", zap.Error(err))
+			c.String(502, "Bad Gateway: Upstream connection error")
 			shouldKeepAlive = false
-			break
+			c.Abort()
+			return
 		}
 
 		// 使用 WriteBinary 写入字节切片 (此时只是链接指针，尚未发送)

@@ -6,6 +6,7 @@ import (
 	"sync/atomic"
 
 	"github.com/nacos-group/nacos-sdk-go/v2/clients"
+	"github.com/nacos-group/nacos-sdk-go/v2/clients/naming_client"
 	"github.com/nacos-group/nacos-sdk-go/v2/common/constant"
 	"github.com/nacos-group/nacos-sdk-go/v2/vo"
 	"go.uber.org/zap"
@@ -22,6 +23,7 @@ type RouteRule struct {
 	Path        string   `json:"path"`         // 例如: "/api/v1/order/:id"
 	StripPrefix string   `json:"strip_prefix"` // 例如: "/api/v1"
 	Backends    []string `json:"backends"`     // 例如: ["127.0.0.1:9091", "127.0.0.1:9092"]
+	ServiceName string   `json:"service_name"` // 动态服务发现的名字，如 "order-service"
 }
 
 // GatewayConfig 定义了网关的动态配置结构
@@ -46,6 +48,8 @@ type ConfigManager struct {
 var (
 	// 全局单例管理器
 	Manager *ConfigManager
+	// 全局单例的服务发现客户端
+	NamingClient naming_client.INamingClient
 )
 
 // InitNacos 初始化 Nacos 客户端并开启监听
@@ -85,7 +89,20 @@ func InitNacos(nacosAddr string, port uint64) error {
 		return err
 	}
 
-	dataId := "gateway_config.json"
+	// 创建服务发现客户端 (Naming Client)
+	NamingClient, err = clients.NewNamingClient(
+		vo.NacosClientParam{
+			ClientConfig:  &clientConfig,
+			ServerConfigs: serverConfigs,
+		},
+	)
+	if err != nil {
+		logger.Log.Error("创建 Nacos Naming Client 失败", zap.Error(err))
+		return err
+	}
+	logger.Log.Info("[Naming] 成功连接 Nacos 服务注册中心！")
+
+	dataId := "novagate_config.json"
 	group := "DEFAULT_GROUP"
 
 	// 启动时主动拉取一次配置
